@@ -1,0 +1,586 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <base target="_top">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ふりこのきまり学習サイト</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, setDoc, onSnapshot, collection, query, orderBy, getDocs } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        
+        // ★★★ この部分を、あなたのFirebaseプロジェクトの設定情報に書き換えてください ★★★
+        const firebaseConfig = {
+            apiKey: "YOUR_API_KEY",
+            authDomain: "YOUR_AUTH_DOMAIN",
+            projectId: "YOUR_PROJECT_ID",
+            storageBucket: "YOUR_STORAGE_BUCKET",
+            messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
+            appId: "YOUR_APP_ID"
+        };
+        // ★★★ ここまで ★★★
+
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+        const auth = getAuth(app);
+        let userId = 'anonymous';
+
+        // グローバル変数として使用できるように設定
+        window.db = db;
+        window.auth = auth;
+        window.userId = userId;
+
+        // 匿名認証でユーザーにログイン
+        onAuthStateChanged(auth, async (user) => {
+            if (user) {
+                window.userId = user.uid;
+                document.getElementById('userIdDisplay').textContent = window.userId;
+                console.log("User signed in with UID:", window.userId);
+            } else {
+                console.log("No user signed in, signing in anonymously...");
+                await signInAnonymously(auth);
+            }
+        });
+
+    </script>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Noto+Sans+JP', sans-serif;
+            background-color: #f0f4f8;
+            scroll-behavior: smooth;
+        }
+        .container {
+            max-width: 1000px;
+        }
+        .section-title {
+            position: relative;
+            display: inline-block;
+            padding-bottom: 8px;
+        }
+        .section-title::after {
+            content: '';
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            height: 4px;
+            background-color: #0d6efd;
+            border-radius: 2px;
+        }
+        .panel {
+            background-color: #ffffff;
+            border-radius: 12px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+            padding: 24px;
+        }
+        .tab-button {
+            padding: 10px 20px;
+            cursor: pointer;
+            border: none;
+            background-color: #e2e8f0;
+            color: #4a5568;
+            border-radius: 8px 8px 0 0;
+            font-weight: bold;
+        }
+        .tab-button.active {
+            background-color: #ffffff;
+            color: #0d6efd;
+            border-bottom: 2px solid #0d6efd;
+        }
+        .chart-container {
+            height: 400px;
+        }
+        .data-table-container {
+            overflow-x: auto;
+            margin-top: 1.5rem;
+        }
+        .data-table {
+            width: 100%;
+            text-align: left;
+            border-collapse: collapse;
+        }
+        .data-table th, .data-table td {
+            padding: 8px;
+            border: 1px solid #e2e8f0;
+        }
+        .data-table th {
+            background-color: #f7fafc;
+        }
+        .hidden {
+            display: none;
+        }
+        .stopwatch-container {
+            text-align: center;
+        }
+        .stopwatch-display {
+            font-size: 3rem;
+            font-weight: bold;
+            color: #333;
+            margin-bottom: 1rem;
+        }
+        .stopwatch-buttons button {
+            padding: 0.75rem 1.5rem;
+            font-size: 1rem;
+            font-weight: bold;
+            border-radius: 9999px;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        .stopwatch-buttons .start-stop {
+            background-color: #22c55e;
+            color: white;
+        }
+        .stopwatch-buttons .start-stop.stopped {
+            background-color: #ef4444;
+        }
+        .stopwatch-buttons .record {
+            background-color: #0d6efd;
+            color: white;
+        }
+        .stopwatch-buttons .reset {
+            background-color: #6b7280;
+            color: white;
+        }
+        .experiment-selection {
+            display: flex;
+            justify-content: center;
+            gap: 1rem;
+            margin-bottom: 1.5rem;
+        }
+        .experiment-selection button.active {
+            background-color: #0d6efd;
+            color: white;
+        }
+        .stopwatch-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 1.5rem;
+            border: 2px solid #e2e8f0;
+            border-radius: 12px;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 text-gray-800">
+
+    <div class="container mx-auto p-4 md:p-8">
+        <header class="text-center mb-12">
+            <div class="flex items-center justify-between mb-4">
+                <div class="text-left text-sm md:text-base font-bold text-gray-700">理科 ７ふりこのきまり</div>
+                <h1 class="text-4xl md:text-5xl font-bold text-[#0d6efd] flex-1 text-center">ふりこのきまり学習サイト</h1>
+            </div>
+            <p class="text-lg md:text-xl mt-2 text-gray-600">〜キミだけの科学者ノート〜</p>
+            <p class="text-xs text-gray-400 mt-2">ユーザーID: <span id="userIdDisplay">読み込み中...</span></p>
+        </header>
+
+        <div id="intro-section" class="panel mb-12">
+            <h2 class="section-title text-2xl font-bold mb-4">Step 1: ふりこの3つの要素を知ろう！</h2>
+            <p class="text-base mb-4">ねぇ、みんな！公園のブランコ、もっと速く揺らしたいと思ったことはないかな？今回、そのひみつを科学の力でといていこう！</p>
+            
+            <div class="flex justify-center mb-8">
+                <div class="w-full md:w-3/4 lg:w-2/3 relative" style="padding-bottom: 40%;">
+                    <iframe class="absolute top-0 left-0 w-full h-full rounded-lg shadow-lg" src="https://www2.nhk.or.jp/school/watch/clip/?das_id=D0005301841_00000" frameborder="0" allowfullscreen sandbox="allow-scripts allow-same-origin allow-forms"></iframe>
+                </div>
+            </div>
+
+            <div class="flex flex-col md:flex-row items-start justify-around space-y-4 md:space-y-0 md:space-x-8 mt-8">
+                <div class="flex-1 flex flex-col items-center text-center p-4 rounded-lg bg-blue-50">
+                    <h3 class="font-bold text-xl text-[#0d6efd] mb-2">ふりこの長さ</h3>
+                    <div class="rounded-full mx-auto mb-2 w-24 h-24 bg-gray-300 flex items-center justify-center text-4xl font-bold text-white">📏</div>
+                    <p class="text-sm">ふりこのヒモや鎖の長さのこと。</p>
+                </div>
+                <div class="flex-1 flex flex-col items-center text-center p-4 rounded-lg bg-green-50">
+                    <h3 class="font-bold text-xl text-[#0d6efd] mb-2">おもりの重さ</h3>
+                    <div class="rounded-full mx-auto mb-2 w-24 h-24 bg-gray-300 flex items-center justify-center text-4xl font-bold text-white">🏋️</div>
+                    <p class="text-sm">おもり（ブランコに乗る人）の重さのこと。</p>
+                </div>
+                <div class="flex-1 flex flex-col items-center text-center p-4 rounded-lg bg-yellow-50">
+                    <h3 class="font-bold text-xl text-[#0d6efd] mb-2">ふれはば</h3>
+                    <div class="rounded-full mx-auto mb-2 w-24 h-24 bg-gray-300 flex items-center justify-center text-4xl font-bold text-white">↔️</div>
+                    <p class="text-sm">一番高いところから一番低いところまでの距離のこと。</p>
+                </div>
+            </div>
+            <p class="mt-8 text-center text-lg font-bold text-gray-700">この3つのうち、どれを変えれば1往復する時間が変わると思う？</p>
+        </div>
+
+        <div class="bg-white rounded-t-lg shadow-sm">
+            <div role="tablist" class="flex border-b border-gray-200">
+                <button id="tab-record-manual" role="tab" aria-selected="true" class="tab-button active">実験記録（手動）</button>
+                <button id="tab-record-auto" role="tab" aria-selected="false" class="tab-button">実験記録（自動）</button>
+                <button id="tab-simulate" role="tab" aria-selected="false" class="tab-button">シミュレーション</button>
+            </div>
+        </div>
+
+        <div id="record-manual-section" class="panel mb-12">
+            <h2 class="section-title text-2xl font-bold mb-4">Step 2: 実験記録をつけよう！</h2>
+            <p class="text-base mb-4">実際にふりこを使って実験してみよう。**変える条件は一つだけ**だよ。実験が終わったら、ここに結果を入力してね。</p>
+            
+            <div class="bg-gray-50 rounded-lg p-6 flex flex-col items-center">
+                <h3 class="text-xl font-bold mb-4">実験の条件と結果を入力</h3>
+                <div class="w-full space-y-8">
+                    <div id="experiment-length-form">
+                        <h4 class="font-bold text-lg mb-2 text-[#0d6efd] flex items-center">
+                            ふりこの長さの実験
+                            <div class="rounded-full ml-4 w-12 h-12 bg-gray-300 flex items-center justify-center text-xl font-bold text-white">📏</div>
+                        </h4>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label for="inputLengthExp1" class="block font-medium">ふりこの長さ (cm):</label>
+                                <input type="range" id="inputLengthExp1" min="25" max="200" step="25" value="100" class="w-full">
+                                <span id="lengthValueExp1" class="block text-right mt-1 text-gray-600">100cm</span>
+                            </div>
+                            <div>
+                                <label for="inputTimeExp1" class="block font-medium">10往復の時間 (秒):</label>
+                                <input type="number" id="inputTimeExp1" step="0.01" min="0.01" class="w-full p-2 border rounded-md" placeholder="例: 14.28">
+                            </div>
+                        </div>
+                        <div class="mt-4 p-2 bg-blue-100 rounded-md">
+                            <p class="text-sm font-semibold">【揃える条件】おもりの重さ: 30g, ふれはば: 30°</p>
+                        </div>
+                        <button class="add-result-btn mt-4 bg-[#0d6efd] text-white font-bold py-2 px-6 rounded-full shadow-lg hover:bg-blue-700 transition-colors" data-exp-type="length-manual">
+                            結果を記録する
+                        </button>
+                    </div>
+
+                    <hr class="border-gray-300">
+
+                    <div id="experiment-weight-form">
+                        <h4 class="font-bold text-lg mb-2 text-[#0d6efd] flex items-center">
+                            おもりの重さの実験
+                            <div class="rounded-full ml-4 w-12 h-12 bg-gray-300 flex items-center justify-center text-xl font-bold text-white">🏋️</div>
+                        </h4>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label for="inputWeightExp2" class="block font-medium">おもりの重さ (g):</label>
+                                <input type="range" id="inputWeightExp2" min="10" max="50" step="10" value="10" class="w-full">
+                                <span id="weightValueExp2" class="block text-right mt-1 text-gray-600">10g</span>
+                            </div>
+                            <div>
+                                <label for="inputTimeExp2" class="block font-medium">10往復の時間 (秒):</label>
+                                <input type="number" id="inputTimeExp2" step="0.01" min="0.01" class="w-full p-2 border rounded-md" placeholder="例: 14.28">
+                            </div>
+                        </div>
+                        <div class="mt-4 p-2 bg-blue-100 rounded-md">
+                            <p class="text-sm font-semibold">【揃える条件】ふりこの長さ: 50cm, ふれはば: 30°</p>
+                        </div>
+                        <button class="add-result-btn mt-4 bg-[#0d6efd] text-white font-bold py-2 px-6 rounded-full shadow-lg hover:bg-blue-700 transition-colors" data-exp-type="weight-manual">
+                            結果を記録する
+                        </button>
+                    </div>
+
+                    <hr class="border-gray-300">
+
+                    <div id="experiment-amplitude-form">
+                        <h4 class="font-bold text-lg mb-2 text-[#0d6efd] flex items-center">
+                            ふれはばの実験
+                            <div class="rounded-full ml-4 w-12 h-12 bg-gray-300 flex items-center justify-center text-xl font-bold text-white">↔️</div>
+                        </h4>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label for="inputAmplitudeExp3" class="block font-medium">ふれはば (度):</label>
+                                <input type="range" id="inputAmplitudeExp3" min="10" max="30" step="10" value="10" class="w-full">
+                                <span id="amplitudeValueExp3" class="block text-right mt-1 text-gray-600">10°</span>
+                            </div>
+                            <div>
+                                <label for="inputTimeExp3" class="block font-medium">10往復の時間 (秒):</label>
+                                <input type="number" id="inputTimeExp3" step="0.01" min="0.01" class="w-full p-2 border rounded-md" placeholder="例: 14.28">
+                            </div>
+                        </div>
+                        <div class="mt-4 p-2 bg-blue-100 rounded-md">
+                            <p class="text-sm font-semibold">【揃える条件】ふりこの長さ: 50cm, おもりの重さ: 30g</p>
+                        </div>
+                        <button class="add-result-btn mt-4 bg-[#0d6efd] text-white font-bold py-2 px-6 rounded-full shadow-lg hover:bg-blue-700 transition-colors" data-exp-type="amplitude-manual">
+                            結果を記録する
+                        </button>
+                    </div>
+                </div>
+                <p id="messageBoxManual" class="mt-4 text-red-500 font-bold hidden"></p>
+            </div>
+        </div>
+
+        <div id="record-auto-section" class="panel mb-12 hidden">
+            <h2 class="section-title text-2xl font-bold mb-4">Step 2: 実験記録（自動）</h2>
+            <p class="text-base mb-4">ストップウォッチを使って、10往復の時間を正確に測ってみよう。**変える条件は一つだけ**だよ。</p>
+
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <div class="stopwatch-item">
+                    <h3 class="font-bold text-lg mb-4 text-[#0d6efd] flex items-center">
+                        <div class="rounded-full ml-4 w-12 h-12 bg-gray-300 flex items-center justify-center text-xl font-bold text-white">📏</div>
+                        ふりこの長さの実験
+                    </h3>
+                    <div id="stopwatchDisplayLength" class="stopwatch-display">00:00.00</div>
+                    <div class="stopwatch-buttons flex justify-center space-x-4">
+                        <button id="stopwatchStartStopLength" class="start-stop">スタート</button>
+                    </div>
+                    <div class="w-full space-y-4 mt-4">
+                        <div>
+                            <label for="inputLengthExpAuto1" class="block font-medium text-left">ふりこの長さ (cm):</label>
+                            <input type="range" id="inputLengthExpAuto1" min="25" max="200" step="25" value="100" class="w-full">
+                            <span id="lengthValueExpAuto1" class="block text-right mt-1 text-gray-600">100cm</span>
+                        </div>
+                        <div class="p-2 bg-blue-100 rounded-md">
+                            <p class="text-sm font-semibold">【揃える条件】おもりの重さ: 30g, ふれはば: 30°</p>
+                        </div>
+                    </div>
+                    <div class="flex justify-start space-x-4 mt-4 hidden" id="auto-buttons-length">
+                        <button class="add-result-btn bg-[#0d6efd] text-white font-bold py-2 px-6 rounded-full shadow-lg hover:bg-blue-700 transition-colors" data-exp-type="length-auto">
+                            記録する
+                        </button>
+                        <button class="reset-timer-btn bg-gray-500 text-white font-bold py-2 px-6 rounded-full shadow-lg hover:bg-gray-700 transition-colors" data-exp-type="length-auto">
+                            記録しない
+                        </button>
+                    </div>
+                </div>
+
+                <div class="stopwatch-item">
+                    <h3 class="font-bold text-lg mb-4 text-[#0d6efd] flex items-center">
+                        <div class="rounded-full ml-4 w-12 h-12 bg-gray-300 flex items-center justify-center text-xl font-bold text-white">🏋️</div>
+                        おもりの重さの実験
+                    </h3>
+                    <div id="stopwatchDisplayWeight" class="stopwatch-display">00:00.00</div>
+                    <div class="stopwatch-buttons flex justify-center space-x-4">
+                        <button id="stopwatchStartStopWeight" class="start-stop">スタート</button>
+                    </div>
+                    <div class="w-full space-y-4 mt-4">
+                        <div>
+                            <label for="inputWeightExpAuto2" class="block font-medium text-left">おもりの重さ (g):</label>
+                            <input type="range" id="inputWeightExpAuto2" min="10" max="50" step="10" value="10" class="w-full">
+                            <span id="weightValueExpAuto2" class="block text-right mt-1 text-gray-600">10g</span>
+                        </div>
+                        <div class="p-2 bg-blue-100 rounded-md">
+                            <p class="text-sm font-semibold">【揃える条件】ふりこの長さ: 50cm, ふれはば: 30°</p>
+                        </div>
+                    </div>
+                    <div class="flex justify-start space-x-4 mt-4 hidden" id="auto-buttons-weight">
+                        <button class="add-result-btn bg-[#0d6efd] text-white font-bold py-2 px-6 rounded-full shadow-lg hover:bg-blue-700 transition-colors" data-exp-type="weight-auto">
+                            記録する
+                        </button>
+                        <button class="reset-timer-btn bg-gray-500 text-white font-bold py-2 px-6 rounded-full shadow-lg hover:bg-gray-700 transition-colors" data-exp-type="weight-auto">
+                            記録しない
+                        </button>
+                    </div>
+                </div>
+
+                <div class="stopwatch-item">
+                    <h3 class="font-bold text-lg mb-4 text-[#0d6efd] flex items-center">
+                        <div class="rounded-full ml-4 w-12 h-12 bg-gray-300 flex items-center justify-center text-xl font-bold text-white">↔️</div>
+                        ふれはばの実験
+                    </h3>
+                    <div id="stopwatchDisplayAmplitude" class="stopwatch-display">00:00.00</div>
+                    <div class="stopwatch-buttons flex justify-center space-x-4">
+                        <button id="stopwatchStartStopAmplitude" class="start-stop">スタート</button>
+                    </div>
+                    <div class="w-full space-y-4 mt-4">
+                        <div>
+                            <label for="inputAmplitudeExpAuto3" class="block font-medium text-left">ふれはば (度):</label>
+                            <input type="range" id="inputAmplitudeExpAuto3" min="10" max="30" step="10" value="10" class="w-full">
+                            <span id="amplitudeValueExpAuto3" class="block text-right mt-1 text-gray-600">10°</span>
+                        </div>
+                        <div class="p-2 bg-blue-100 rounded-md">
+                            <p class="text-sm font-semibold">【揃える条件】ふりこの長さ: 50cm, おもりの重さ: 30g</p>
+                        </div>
+                    </div>
+                    <div class="flex justify-start space-x-4 mt-4 hidden" id="auto-buttons-amplitude">
+                        <button class="add-result-btn bg-[#0d6efd] text-white font-bold py-2 px-6 rounded-full shadow-lg hover:bg-blue-700 transition-colors" data-exp-type="amplitude-auto">
+                            記録する
+                        </button>
+                        <button class="reset-timer-btn bg-gray-500 text-white font-bold py-2 px-6 rounded-full shadow-lg hover:bg-gray-700 transition-colors" data-exp-type="amplitude-auto">
+                            記録しない
+                        </button>
+                    </div>
+                </div>
+            </div>
+            
+            <p id="messageBoxAuto" class="mt-4 text-red-500 font-bold hidden"></p>
+            
+            <hr class="my-8 border-gray-300">
+
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mt-8">
+                <div class="bg-gray-50 rounded-lg p-4">
+                    <h3 class="text-lg font-bold text-center mb-4">長さと1往復の時間の関係</h3>
+                    <div class="chart-container">
+                        <canvas id="lengthChartAuto"></canvas>
+                    </div>
+                    <div class="data-table-container">
+                        <table class="data-table" id="lengthTableAuto">
+                            <thead>
+                                <tr class="bg-gray-100">
+                                    <th rowspan="2" class="px-4 py-2 text-center align-middle">長さ (cm)</th>
+                                    <th colspan="3" class="px-2 py-2 text-center">10往復する時間 (秒)</th>
+                                    <th rowspan="2" class="px-2 py-2 text-center align-middle">合計(秒)</th>
+                                    <th rowspan="2" class="px-2 py-2 text-center align-middle">平均(秒)</th>
+                                    <th rowspan="2" class="px-2 py-2 text-center align-middle">1往復平均(秒)</th>
+                                </tr>
+                                <tr class="bg-gray-100">
+                                    <th class="px-4 py-2 text-center">1回目</th>
+                                    <th class="px-4 py-2 text-center">2回目</th>
+                                    <th class="px-4 py-2 text-center">3回目</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="bg-gray-50 rounded-lg p-4">
+                    <h3 class="text-lg font-bold text-center mb-4">重さと1往復の時間の関係</h3>
+                    <div class="chart-container">
+                        <canvas id="weightChartAuto"></canvas>
+                    </div>
+                    <div class="data-table-container">
+                        <table class="data-table" id="weightTableAuto">
+                             <thead>
+                                <tr class="bg-gray-100">
+                                    <th rowspan="2" class="px-4 py-2 text-center align-middle">重さ (g)</th>
+                                    <th colspan="3" class="px-2 py-2 text-center">10往復する時間 (秒)</th>
+                                    <th rowspan="2" class="px-2 py-2 text-center align-middle">合計(秒)</th>
+                                    <th rowspan="2" class="px-2 py-2 text-center align-middle">平均(秒)</th>
+                                    <th rowspan="2" class="px-2 py-2 text-center align-middle">1往復平均(秒)</th>
+                                </tr>
+                                <tr class="bg-gray-100">
+                                    <th class="px-4 py-2 text-center">1回目</th>
+                                    <th class="px-4 py-2 text-center">2回目</th>
+                                    <th class="px-4 py-2 text-center">3回目</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="bg-gray-50 rounded-lg p-4">
+                    <h3 class="text-lg font-bold text-center mb-4">ふれはばと1往復の時間の関係</h3>
+                    <div class="chart-container">
+                        <canvas id="amplitudeChartAuto"></canvas>
+                    </div>
+                    <div class="data-table-container">
+                        <table class="data-table" id="amplitudeTableAuto">
+                            <thead>
+                                <tr class="bg-gray-100">
+                                    <th rowspan="2" class="px-4 py-2 text-center align-middle">ふれはば (度)</th>
+                                    <th colspan="3" class="px-2 py-2 text-center">10往復する時間 (秒)</th>
+                                    <th rowspan="2" class="px-2 py-2 text-center align-middle">合計(秒)</th>
+                                    <th rowspan="2" class="px-2 py-2 text-center align-middle">平均(秒)</th>
+                                    <th rowspan="2" class="px-2 py-2 text-center align-middle">1往復平均(秒)</th>
+                                </tr>
+                                <tr class="bg-gray-100">
+                                    <th class="px-4 py-2 text-center">1回目</th>
+                                    <th class="px-4 py-2 text-center">2回目</th>
+                                    <th class="px-4 py-2 text-center">3回目</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="simulation-section" class="panel mb-12 hidden">
+            <h2 class="section-title text-2xl font-bold mb-4">シミュレーション：予想を確かめよう！</h2>
+            <p class="text-base mb-4">ここでは、ふりこの動きをコンピューターで再現できるよ。君の予想と比べてみよう。</p>
+            
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div class="bg-gray-50 rounded-lg p-6 flex flex-col items-center">
+                    <h3 class="text-xl font-bold mb-4">シミュレーションの条件を決めよう</h3>
+                    <div class="w-full space-y-4">
+                        <div>
+                            <label for="simLength" class="block font-medium">ふりこの長さ (cm):</label>
+                            <input type="range" id="simLength" min="25" max="200" step="25" value="100" class="w-full">
+                            <span id="simLengthValue" class="block text-right mt-1">100cm</span>
+                        </div>
+                        <div>
+                            <label for="simWeight" class="block font-medium">おもりの重さ (g):</label>
+                            <input type="range" id="simWeight" min="10" max="50" step="10" value="10" class="w-full">
+                            <span id="simWeightValue" class="block text-right mt-1">10g</span>
+                        </div>
+                        <div>
+                            <label for="simAmplitude" class="block font-medium">ふれはば (度):</label>
+                            <input type="range" id="simAmplitude" min="10" max="30" step="10" value="10" class="w-full">
+                            <span id="simAmplitudeValue" class="block text-right mt-1">10°</span>
+                        </div>
+                    </div>
+                    <button id="startSimBtn" class="mt-8 bg-[#0d6efd] text-white font-bold py-2 px-6 rounded-full shadow-lg hover:bg-blue-700 transition-colors">
+                        シミュレーションスタート！
+                    </button>
+                </div>
+                
+                <div class="bg-gray-50 rounded-lg p-6 flex flex-col items-center">
+                    <h3 class="text-xl font-bold mb-4">シミュレーション</h3>
+                    <canvas id="pendulumCanvas" class="w-full" height="300"></canvas>
+                    <p id="timerDisplay" class="text-2xl font-bold mt-4">0.00 秒</p>
+                </div>
+            </div>
+        </div>
+
+        <div id="data-section-manual" class="panel mb-12">
+            <h2 class="section-title text-2xl font-bold mb-4">Step 3: データと考察でまとめよう！</h2>
+            <p class="text-base mb-4">実験で集めたデータをここに記録していこう。グラフにすると、もっと分かりやすくなるよ！</p>
+            
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mt-8">
+                <div class="bg-gray-50 rounded-lg p-4">
+                    <h3 class="text-lg font-bold text-center mb-4">長さと1往復の時間の関係</h3>
+                    <div class="chart-container">
+                        <canvas id="lengthChart"></canvas>
+                    </div>
+                    <div class="data-table-container">
+                        <table class="data-table" id="lengthTable">
+                            <thead>
+                                <tr class="bg-gray-100">
+                                    <th rowspan="2" class="px-4 py-2 text-center align-middle">長さ (cm)</th>
+                                    <th colspan="3" class="px-2 py-2 text-center">10往復する時間 (秒)</th>
+                                    <th rowspan="2" class="px-2 py-2 text-center align-middle">合計(秒)</th>
+                                    <th rowspan="2" class="px-2 py-2 text-center align-middle">平均(秒)</th>
+                                    <th rowspan="2" class="px-2 py-2 text-center align-middle">1往復平均(秒)</th>
+                                </tr>
+                                <tr class="bg-gray-100">
+                                    <th class="px-4 py-2 text-center">1回目</th>
+                                    <th class="px-4 py-2 text-center">2回目</th>
+                                    <th class="px-4 py-2 text-center">3回目</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="bg-gray-50 rounded-lg p-4">
+                    <h3 class="text-lg font-bold text-center mb-4">重さと1往復の時間の関係</h3>
+                    <div class="chart-container">
+                        <canvas id="weightChart"></canvas>
+                    </div>
+                    <div class="data-table-container">
+                        <table class="data-table" id="weightTable">
+                            <thead>
+                                <tr class="bg-gray-100">
+                                    <th rowspan="2" class="px-4 py-2 text-center align-middle">重さ (g)</th>
+                                    <th colspan="3" class="px-2 py-2 text-center">10往復する時間 (秒)</th>
+                                    <th rowspan="2" class="px-2 py-2 text-center align-middle">合計(秒)</th>
+                                    <th rowspan="2" class="px-2 py-2 text-center align-middle">平均(秒)</th>
+                                    <th rowspan="2" class="px-2 py-2 text-center align-middle">1往復平均(秒)</th>
+                                </tr>
+                                <tr class="bg-gray-100">
+                                    <th class="px-4 py-2 text-center">1回目</th>
+                                    <th class="px-4 py-2 text-center">2回目</th>
+                                    <th class="px-4 py-2 text-center">3回目</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <script src="script.js"></script>
+    </body>
+    </html>
