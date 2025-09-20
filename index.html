@@ -578,9 +578,529 @@
                         </table>
                     </div>
                 </div>
+
+                 <div class="bg-gray-50 rounded-lg p-4">
+                    <h3 class="text-lg font-bold text-center mb-4">ふれはばと1往復の時間の関係</h3>
+                    <div class="chart-container">
+                        <canvas id="amplitudeChart"></canvas>
+                    </div>
+                    <div class="data-table-container">
+                        <table class="data-table" id="amplitudeTable">
+                            <thead>
+                                <tr class="bg-gray-100">
+                                    <th rowspan="2" class="px-4 py-2 text-center align-middle">ふれはば (度)</th>
+                                    <th colspan="3" class="px-2 py-2 text-center">10往復する時間 (秒)</th>
+                                    <th rowspan="2" class="px-2 py-2 text-center align-middle">合計(秒)</th>
+                                    <th rowspan="2" class="px-2 py-2 text-center align-middle">平均(秒)</th>
+                                    <th rowspan="2" class="px-2 py-2 text-center align-middle">1往復平均(秒)</th>
+                                </tr>
+                                <tr class="bg-gray-100">
+                                    <th class="px-4 py-2 text-center">1回目</th>
+                                    <th class="px-4 py-2 text-center">2回目</th>
+                                    <th class="px-4 py-2 text-center">3回目</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                </tbody>
+                        </table>
+                    </div>
+                </div>
             </div>
         </div>
+        
+    <script>
+    // ====== グローバル変数 ======
+    let pendulumLengthChart, pendulumWeightChart, pendulumAmplitudeChart;
+    let autoLengthChart, autoWeightChart, autoAmplitudeChart;
 
-        <script src="script.js"></script>
-    </body>
-    </html>
+    const dataCache = {
+        'length-manual': [],
+        'weight-manual': [],
+        'amplitude-manual': [],
+        'length-auto': {},
+        'weight-auto': {},
+        'amplitude-auto': {},
+    };
+
+    // ====== 初期化処理 ======
+    document.addEventListener('DOMContentLoaded', () => {
+        setupTabs();
+        setupInputListeners();
+        setupRecordButtons();
+        setupStopwatches();
+        setupCharts();
+        setupSimulation();
+        loadDataFromFirestore();
+    });
+
+    // ====== タブ切り替え機能 ======
+    function setupTabs() {
+        const tabs = document.querySelectorAll('.tab-button');
+        const sections = {
+            'tab-record-manual': 'record-manual-section',
+            'tab-record-auto': 'record-auto-section',
+            'tab-simulate': 'simulation-section'
+        };
+
+        tabs.forEach(tab => {
+            tab.addEventListener('click', () => {
+                // すべてのタブから'active'クラスを削除
+                tabs.forEach(t => t.classList.remove('active'));
+                // クリックされたタブに'active'クラスを追加
+                tab.classList.add('active');
+
+                // すべてのセクションを非表示にする
+                for (const key in sections) {
+                    document.getElementById(sections[key]).classList.add('hidden');
+                }
+
+                // 選択されたセクションを表示する
+                document.getElementById(sections[tab.id]).classList.remove('hidden');
+
+                // '実験記録（手動）'タブ選択時の特別処理
+                const dataSectionManual = document.getElementById('data-section-manual');
+                const dataSectionAuto = document.getElementById('record-auto-section').querySelector('.grid-cols-3.gap-6.mt-8');
+                
+                if (tab.id === 'tab-record-manual') {
+                    dataSectionManual.classList.remove('hidden');
+                    dataSectionAuto.classList.add('hidden');
+                } else if (tab.id === 'tab-record-auto') {
+                    dataSectionManual.classList.add('hidden');
+                    dataSectionAuto.classList.remove('hidden');
+                } else {
+                    dataSectionManual.classList.add('hidden');
+                    dataSectionAuto.classList.add('hidden');
+                }
+            });
+        });
+    }
+
+
+    // ====== 入力フォームのリスナー設定 ======
+    function setupInputListeners() {
+        document.getElementById('inputLengthExp1').addEventListener('input', (e) => {
+            document.getElementById('lengthValueExp1').textContent = `${e.target.value}cm`;
+        });
+        document.getElementById('inputWeightExp2').addEventListener('input', (e) => {
+            document.getElementById('weightValueExp2').textContent = `${e.target.value}g`;
+        });
+        document.getElementById('inputAmplitudeExp3').addEventListener('input', (e) => {
+            document.getElementById('amplitudeValueExp3').textContent = `${e.target.value}°`;
+        });
+        document.getElementById('inputLengthExpAuto1').addEventListener('input', (e) => {
+            document.getElementById('lengthValueExpAuto1').textContent = `${e.target.value}cm`;
+        });
+        document.getElementById('inputWeightExpAuto2').addEventListener('input', (e) => {
+            document.getElementById('weightValueExpAuto2').textContent = `${e.target.value}g`;
+        });
+        document.getElementById('inputAmplitudeExpAuto3').addEventListener('input', (e) => {
+            document.getElementById('amplitudeValueExpAuto3').textContent = `${e.target.value}°`;
+        });
+        document.getElementById('simLength').addEventListener('input', (e) => {
+            document.getElementById('simLengthValue').textContent = `${e.target.value}cm`;
+        });
+        document.getElementById('simWeight').addEventListener('input', (e) => {
+            document.getElementById('simWeightValue').textContent = `${e.target.value}g`;
+        });
+        document.getElementById('simAmplitude').addEventListener('input', (e) => {
+            document.getElementById('simAmplitudeValue').textContent = `${e.target.value}°`;
+        });
+    }
+
+    // ====== 記録ボタン機能 ======
+    function setupRecordButtons() {
+        document.querySelectorAll('.add-result-btn').forEach(button => {
+            button.addEventListener('click', async (e) => {
+                const type = e.target.dataset.expType;
+                let data = {};
+                let messageBoxId;
+                let docId;
+
+                switch (type) {
+                    case 'length-manual':
+                        data.length = parseInt(document.getElementById('inputLengthExp1').value);
+                        data.time = parseFloat(document.getElementById('inputTimeExp1').value);
+                        data.type = 'length';
+                        messageBoxId = 'messageBoxManual';
+                        docId = `${data.length}`;
+                        break;
+                    case 'weight-manual':
+                        data.weight = parseInt(document.getElementById('inputWeightExp2').value);
+                        data.time = parseFloat(document.getElementById('inputTimeExp2').value);
+                        data.type = 'weight';
+                        messageBoxId = 'messageBoxManual';
+                        docId = `${data.weight}`;
+                        break;
+                    case 'amplitude-manual':
+                        data.amplitude = parseInt(document.getElementById('inputAmplitudeExp3').value);
+                        data.time = parseFloat(document.getElementById('inputTimeExp3').value);
+                        data.type = 'amplitude';
+                        messageBoxId = 'messageBoxManual';
+                        docId = `${data.amplitude}`;
+                        break;
+                    case 'length-auto':
+                        data.length = parseInt(document.getElementById('inputLengthExpAuto1').value);
+                        data.time = window.stopwatchLengthTime;
+                        data.type = 'length';
+                        messageBoxId = 'messageBoxAuto';
+                        docId = `${data.length}`;
+                        break;
+                    case 'weight-auto':
+                        data.weight = parseInt(document.getElementById('inputWeightExpAuto2').value);
+                        data.time = window.stopwatchWeightTime;
+                        data.type = 'weight';
+                        messageBoxId = 'messageBoxAuto';
+                        docId = `${data.weight}`;
+                        break;
+                    case 'amplitude-auto':
+                        data.amplitude = parseInt(document.getElementById('inputAmplitudeExpAuto3').value);
+                        data.time = window.stopwatchAmplitudeTime;
+                        data.type = 'amplitude';
+                        messageBoxId = 'messageBoxAuto';
+                        docId = `${data.amplitude}`;
+                        break;
+                }
+
+                if (data.time === undefined || isNaN(data.time)) {
+                    showMessage(messageBoxId, '時間を入力してください。', 'red');
+                    return;
+                }
+
+                if (window.userId === 'anonymous') {
+                    showMessage(messageBoxId, 'ユーザーが認証されていません。しばらくお待ちください。', 'red');
+                    return;
+                }
+
+                const collectionName = `${window.userId}-${type}`;
+                const docRef = doc(db, collectionName, docId);
+
+                try {
+                    const existingDoc = await getDocs(query(collection(db, collectionName)));
+                    let currentData = null;
+                    existingDoc.forEach(d => {
+                        if(d.id === docId) {
+                            currentData = d.data();
+                        }
+                    });
+
+                    let times = currentData && currentData.times ? currentData.times : [];
+                    times.push(data.time);
+
+                    await setDoc(docRef, {
+                        param: data.length || data.weight || data.amplitude,
+                        times: times,
+                        timestamp: new Date()
+                    });
+
+                    showMessage(messageBoxId, '記録しました！', 'green');
+                } catch (error) {
+                    console.error("Error writing document: ", error);
+                    showMessage(messageBoxId, '記録に失敗しました。', 'red');
+                }
+            });
+        });
+    }
+
+    // メッセージ表示機能
+    function showMessage(id, message, type) {
+        const box = document.getElementById(id);
+        box.textContent = message;
+        box.classList.remove('hidden', 'text-red-500', 'text-green-500');
+        box.classList.add(`text-${type}-500`);
+        setTimeout(() => box.classList.add('hidden'), 3000);
+    }
+
+    // ====== Firebaseからデータをロードして描画 ======
+    function loadDataFromFirestore() {
+        if (window.userId === 'anonymous') {
+            setTimeout(loadDataFromFirestore, 500); // 認証が完了するまで待機
+            return;
+        }
+
+        const expTypes = ['length', 'weight', 'amplitude'];
+
+        expTypes.forEach(type => {
+            // 手動タブ用
+            const manualCollectionName = `${window.userId}-${type}-manual`;
+            onSnapshot(collection(db, manualCollectionName), (snapshot) => {
+                const data = [];
+                snapshot.forEach(doc => data.push(doc.data()));
+                updateTableAndChart(data, type, false);
+            });
+
+            // 自動タブ用
+            const autoCollectionName = `${window.userId}-${type}-auto`;
+            onSnapshot(collection(db, autoCollectionName), (snapshot) => {
+                const data = [];
+                snapshot.forEach(doc => data.push(doc.data()));
+                updateTableAndChart(data, type, true);
+            });
+        });
+    }
+
+    // ====== グラフと表の更新 ======
+    function updateTableAndChart(data, type, isAuto) {
+        const sortedData = data.sort((a, b) => a.param - b.param);
+
+        const tableId = `${type}Table${isAuto ? 'Auto' : ''}`;
+        const chartId = `${type}Chart${isAuto ? 'Auto' : ''}`;
+        const tableBody = document.getElementById(tableId).querySelector('tbody');
+        const chart = isAuto ? getChartInstance(chartId, type, true) : getChartInstance(chartId, type, false);
+
+        tableBody.innerHTML = ''; // 表をクリア
+
+        const labels = [];
+        const chartData = [];
+
+        sortedData.forEach(item => {
+            const param = item.param;
+            const times = item.times;
+            const totalTime = times.reduce((sum, current) => sum + current, 0);
+            const averageTime = totalTime / times.length;
+            const oneRoundTime = averageTime / 10;
+
+            const row = document.createElement('tr');
+            row.innerHTML = `
+                <td class="px-4 py-2 text-center font-bold">${param}</td>
+                <td class="px-4 py-2 text-center">${times[0] ? times[0].toFixed(2) : '-'}</td>
+                <td class="px-4 py-2 text-center">${times[1] ? times[1].toFixed(2) : '-'}</td>
+                <td class="px-4 py-2 text-center">${times[2] ? times[2].toFixed(2) : '-'}</td>
+                <td class="px-4 py-2 text-center">${totalTime.toFixed(2)}</td>
+                <td class="px-4 py-2 text-center">${averageTime.toFixed(2)}</td>
+                <td class="px-4 py-2 text-center">${oneRoundTime.toFixed(2)}</td>
+            `;
+            tableBody.appendChild(row);
+
+            labels.push(param);
+            chartData.push(oneRoundTime);
+        });
+
+        chart.data.labels = labels;
+        chart.data.datasets[0].data = chartData;
+        chart.update();
+    }
+
+
+    // ====== グラフの初期化 ======
+    function setupCharts() {
+        const chartOptions = {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    title: {
+                        display: true,
+                        text: '1往復の時間 (秒)'
+                    }
+                },
+                x: {
+                    title: {
+                        display: true,
+                        text: 'パラメータ'
+                    }
+                }
+            }
+        };
+
+        const ctxLength = document.getElementById('lengthChart').getContext('2d');
+        const ctxWeight = document.getElementById('weightChart').getContext('2d');
+        const ctxAmplitude = document.getElementById('amplitudeChart').getContext('2d');
+        const ctxLengthAuto = document.getElementById('lengthChartAuto').getContext('2d');
+        const ctxWeightAuto = document.getElementById('weightChartAuto').getContext('2d');
+        const ctxAmplitudeAuto = document.getElementById('amplitudeChartAuto').getContext('2d');
+
+        chartOptions.scales.x.title.text = 'ふりこの長さ (cm)';
+        pendulumLengthChart = new Chart(ctxLength, {
+            type: 'line', data: { labels: [], datasets: [{ label: '1往復の時間', data: [], borderColor: 'rgb(75, 192, 192)', tension: 0.1 }] }, options: chartOptions
+        });
+        autoLengthChart = new Chart(ctxLengthAuto, {
+            type: 'line', data: { labels: [], datasets: [{ label: '1往復の時間', data: [], borderColor: 'rgb(75, 192, 192)', tension: 0.1 }] }, options: chartOptions
+        });
+
+        chartOptions.scales.x.title.text = 'おもりの重さ (g)';
+        pendulumWeightChart = new Chart(ctxWeight, {
+            type: 'line', data: { labels: [], datasets: [{ label: '1往復の時間', data: [], borderColor: 'rgb(255, 99, 132)', tension: 0.1 }] }, options: chartOptions
+        });
+        autoWeightChart = new Chart(ctxWeightAuto, {
+            type: 'line', data: { labels: [], datasets: [{ label: '1往復の時間', data: [], borderColor: 'rgb(255, 99, 132)', tension: 0.1 }] }, options: chartOptions
+        });
+
+        chartOptions.scales.x.title.text = 'ふれはば (度)';
+        pendulumAmplitudeChart = new Chart(ctxAmplitude, {
+            type: 'line', data: { labels: [], datasets: [{ label: '1往復の時間', data: [], borderColor: 'rgb(54, 162, 235)', tension: 0.1 }] }, options: chartOptions
+        });
+        autoAmplitudeChart = new Chart(ctxAmplitudeAuto, {
+            type: 'line', data: { labels: [], datasets: [{ label: '1往復の時間', data: [], borderColor: 'rgb(54, 162, 235)', tension: 0.1 }] }, options: chartOptions
+        });
+    }
+
+    function getChartInstance(id, type, isAuto) {
+        if (id === 'lengthChart') return pendulumLengthChart;
+        if (id === 'weightChart') return pendulumWeightChart;
+        if (id === 'amplitudeChart') return pendulumAmplitudeChart;
+        if (id === 'lengthChartAuto') return autoLengthChart;
+        if (id === 'weightChartAuto') return autoWeightChart;
+        if (id === 'amplitudeChartAuto') return autoAmplitudeChart;
+    }
+
+    // ====== ストップウォッチ機能 ======
+    let stopwatchLengthInterval, stopwatchWeightInterval, stopwatchAmplitudeInterval;
+    let stopwatchLengthStartTime, stopwatchWeightStartTime, stopwatchAmplitudeStartTime;
+    window.stopwatchLengthTime, window.stopwatchWeightTime, window.stopwatchAmplitudeTime;
+
+    function setupStopwatches() {
+        document.getElementById('stopwatchStartStopLength').addEventListener('click', () => toggleStopwatch('length'));
+        document.getElementById('stopwatchStartStopWeight').addEventListener('click', () => toggleStopwatch('weight'));
+        document.getElementById('stopwatchStartStopAmplitude').addEventListener('click', () => toggleStopwatch('amplitude'));
+        document.querySelectorAll('.reset-timer-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const type = e.target.dataset.expType.replace('-auto', '');
+                resetStopwatch(type);
+            });
+        });
+    }
+
+    function toggleStopwatch(type) {
+        const display = document.getElementById(`stopwatchDisplay${capitalize(type)}`);
+        const button = document.getElementById(`stopwatchStartStop${capitalize(type)}`);
+        const buttonsContainer = document.getElementById(`auto-buttons-${type}`);
+
+        if (button.textContent === 'スタート') {
+            const now = Date.now();
+            if (type === 'length') {
+                stopwatchLengthStartTime = now;
+                stopwatchLengthInterval = setInterval(() => {
+                    const elapsed = Date.now() - stopwatchLengthStartTime;
+                    window.stopwatchLengthTime = elapsed / 1000;
+                    display.textContent = formatTime(elapsed);
+                }, 10);
+            } else if (type === 'weight') {
+                stopwatchWeightStartTime = now;
+                stopwatchWeightInterval = setInterval(() => {
+                    const elapsed = Date.now() - stopwatchWeightStartTime;
+                    window.stopwatchWeightTime = elapsed / 1000;
+                    display.textContent = formatTime(elapsed);
+                }, 10);
+            } else if (type === 'amplitude') {
+                stopwatchAmplitudeStartTime = now;
+                stopwatchAmplitudeInterval = setInterval(() => {
+                    const elapsed = Date.now() - stopwatchAmplitudeStartTime;
+                    window.stopwatchAmplitudeTime = elapsed / 1000;
+                    display.textContent = formatTime(elapsed);
+                }, 10);
+            }
+
+            button.textContent = 'ストップ';
+            button.classList.add('stopped');
+            buttonsContainer.classList.add('hidden');
+        } else {
+            if (type === 'length') clearInterval(stopwatchLengthInterval);
+            if (type === 'weight') clearInterval(stopwatchWeightInterval);
+            if (type === 'amplitude') clearInterval(stopwatchAmplitudeInterval);
+
+            button.textContent = 'スタート';
+            button.classList.remove('stopped');
+            buttonsContainer.classList.remove('hidden');
+        }
+    }
+
+    function resetStopwatch(type) {
+        const display = document.getElementById(`stopwatchDisplay${capitalize(type)}`);
+        const buttonsContainer = document.getElementById(`auto-buttons-${type}`);
+        display.textContent = '00:00.00';
+        buttonsContainer.classList.add('hidden');
+    }
+
+    function formatTime(ms) {
+        const minutes = Math.floor(ms / 60000);
+        const seconds = Math.floor((ms % 60000) / 1000);
+        const milliseconds = Math.floor((ms % 1000) / 10);
+        return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}.${String(milliseconds).padStart(2, '0')}`;
+    }
+
+    function capitalize(str) {
+        return str.charAt(0).toUpperCase() + str.slice(1);
+    }
+    
+    // ====== シミュレーション機能 ======
+    function setupSimulation() {
+        const canvas = document.getElementById('pendulumCanvas');
+        const ctx = canvas.getContext('2d');
+        const timerDisplay = document.getElementById('timerDisplay');
+        const startSimBtn = document.getElementById('startSimBtn');
+
+        let animationFrameId = null;
+        let startTime = null;
+
+        startSimBtn.addEventListener('click', () => {
+            if (animationFrameId) {
+                cancelAnimationFrame(animationFrameId);
+                animationFrameId = null;
+                startSimBtn.textContent = 'シミュレーションスタート！';
+                return;
+            }
+
+            const length = parseInt(document.getElementById('simLength').value);
+            const amplitude = parseInt(document.getElementById('simAmplitude').value);
+            // 重さはシミュレーションに影響しないため、ここでは使用しない
+            
+            const g = 9.81; // 重力加速度 (m/s^2)
+            const L = length / 100; // 長さをメートルに変換
+            const initialAngle = amplitude * Math.PI / 180; // 角度をラジアンに変換
+            const T = 2 * Math.PI * Math.sqrt(L / g); // 理論上の周期 (秒)
+            const omega = Math.sqrt(g / L); // 角振動数
+
+            let angle = initialAngle;
+            let lastTime = performance.now();
+            let elapsedTime = 0;
+            startTime = performance.now();
+
+            function drawPendulum() {
+                const now = performance.now();
+                const deltaTime = (now - lastTime) / 1000;
+                lastTime = now;
+                elapsedTime += deltaTime;
+
+                // 単振動の近似式で角度を計算
+                angle = initialAngle * Math.cos(omega * elapsedTime);
+                
+                // キャンバスをクリア
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+                // 中心点 (固定点)
+                const originX = canvas.width / 2;
+                const originY = 20;
+
+                // ふりこの玉の位置を計算
+                const x = originX + L * 300 * Math.sin(angle); // 300は描画のためのスケール
+                const y = originY + L * 300 * Math.cos(angle);
+
+                // 描画
+                ctx.beginPath();
+                ctx.moveTo(originX, originY);
+                ctx.lineTo(x, y);
+                ctx.lineWidth = 2;
+                ctx.strokeStyle = '#6c757d';
+                ctx.stroke();
+                
+                ctx.beginPath();
+                ctx.arc(x, y, 15, 0, 2 * Math.PI);
+                ctx.fillStyle = '#0d6efd';
+                ctx.fill();
+
+                // タイマーを更新
+                const currentSimTime = (performance.now() - startTime) / 1000;
+                timerDisplay.textContent = `${currentSimTime.toFixed(2)} 秒`;
+
+                animationFrameId = requestAnimationFrame(drawPendulum);
+            }
+
+            drawPendulum();
+            startSimBtn.textContent = 'シミュレーション停止';
+        });
+    }
+
+    </script>
+</body>
+</html>
